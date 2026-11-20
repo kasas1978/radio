@@ -30,7 +30,7 @@ input,select{width:100%;padding:12px;border-radius:10px;border:0;background:#1f2
 <script>
 const $=s=>document.querySelector(s),a=$('#a');
 const SERVERS=['https://de1.api.radio-browser.info','https://at1.api.radio-browser.info','https://nl1.api.radio-browser.info'];
-let favs=[],cur=null,tab=1,timer;
+let favs=[],shown=[],cur=null,tab=1,timer;
 try{favs=JSON.parse(localStorage.getItem('favs')||'[]')}catch(e){}
 const saveFavs=()=>{try{localStorage.setItem('favs',JSON.stringify(favs))}catch(e){}};
 const isFav=id=>favs.some(f=>f.id===id);
@@ -40,7 +40,7 @@ async function api(path){
 }
 function norm(s){return{id:s.stationuuid,name:(s.name||'').trim(),url:s.url_resolved||s.url,img:s.favicon,info:[s.country,s.tags&&s.tags.split(',').slice(0,2).join(', ')].filter(Boolean).join(' · ')}}
 function render(items){
-  const l=$('#list');l.innerHTML='';
+  shown=items;const l=$('#list');l.innerHTML='';
   items.forEach(s=>{
     const d=document.createElement('div');d.className='st';
     const im=document.createElement('img');im.src=s.img||'';im.onerror=()=>{im.removeAttribute('src')};
@@ -70,15 +70,23 @@ function play(s){
   api('/json/url/'+s.id).catch(()=>{});
   if('mediaSession' in navigator){
     navigator.mediaSession.metadata=new MediaMetadata({title:s.name,artist:s.info||'Radio',artwork:s.img?[{src:s.img}]:[]});
-    navigator.mediaSession.setActionHandler('play',()=>a.play());
-    navigator.mediaSession.setActionHandler('pause',()=>a.pause());
   }
 }
-a.onplaying=()=>{$('#play').textContent='⏸';$('#sub').textContent='En directo'};
-a.onpause=()=>{$('#play').textContent='▶'};
+function resume(){if(!cur)return;a.src=cur.url;a.play().catch(()=>{})}
+function step(d){const l=favs.length>1?favs:shown;if(!l.length)return;const i=l.findIndex(x=>x.id===(cur&&cur.id));play(l[(i+d+l.length)%l.length])}
+function setupMedia(){
+  if(!('mediaSession' in navigator))return;
+  const h=(n,f)=>{try{navigator.mediaSession.setActionHandler(n,f)}catch(e){}};
+  h('play',resume);h('pause',()=>a.pause());h('stop',()=>a.pause());
+  h('previoustrack',()=>step(-1));h('nexttrack',()=>step(1));
+}
+const ps=v=>{if('mediaSession' in navigator)navigator.mediaSession.playbackState=v};
+setupMedia();
+a.onplaying=()=>{ps('playing');$('#play').textContent='⏸';$('#sub').textContent='En directo'};
+a.onpause=()=>{ps('paused');$('#play').textContent='▶'};
 a.onwaiting=()=>{$('#sub').textContent='Cargando…'};
 a.onerror=()=>{$('#sub').textContent='Emisora no disponible';$('#play').textContent='▶'};
-$('#play').onclick=()=>{if(!cur)return;if(a.paused){if(!a.src||a.error){a.src=cur.url}a.play()}else a.pause()};
+$('#play').onclick=()=>{if(!cur)return;if(a.paused)resume();else a.pause()};
 $('#q').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{tab=1;setTab();load()},400)};
 $('#c').onchange=()=>{tab=1;setTab();load()};
 function setTab(){$('#t1').className=tab===1?'on':'';$('#t2').className=tab===2?'on':''}
